@@ -10,13 +10,64 @@ plt.style.use("seaborn-v0_8-whitegrid")
 sns.set_palette("viridis")
 
 
+
+def create_logarithmic_scoring_rule():
+    x = sp.Symbol("x")
+    unnormalized_expr = sp.log(1 + x)
+    # Compute the integral symbolically
+    integral_value = float(sp.integrate(unnormalized_expr, (x, 0, 1)))
+
+    def logarithmic_scoring_rule(p):
+        return np.log1p(p) / integral_value
+
+    return logarithmic_scoring_rule
+
+
+def create_spherical_scoring_rule():
+    x = sp.Symbol("x")
+    unnormalized_expr = x / sp.sqrt(x**2 + (1 - x) ** 2)
+    # Compute the integral symbolically
+    integral_value = float(sp.integrate(unnormalized_expr, (x, 0, 1)))
+
+    def spherical_scoring_rule(p):
+        return p / np.sqrt(p**2 + (1 - p) ** 2) / integral_value
+
+    return spherical_scoring_rule
+
+
+# Define scoring rules from the paper
+
+
+def create_quadratic_scoring_rule():
+    # Define the symbolic integral for normalization
+    x = sp.Symbol("x")
+    unnormalized_expr = 2 * x - x**2
+    # Compute the integral symbolically
+    integral_value = float(sp.integrate(unnormalized_expr, (x, 0, 1)))
+
+    def quadratic_scoring_rule(p):
+        return (2 * p - p**2) / integral_value
+
+    return quadratic_scoring_rule
+
+
+logarithmic_scoring_rule = create_logarithmic_scoring_rule()
+spherical_scoring_rule = create_spherical_scoring_rule()
+quadratic_scoring_rule = create_quadratic_scoring_rule()
+
+
 def compute_expected_reward(scoring_rule, p):
     """Compute expected reward R_f(p) for a proper scoring rule f and belief p."""
     return p * scoring_rule(p) + (1 - p) * scoring_rule(1 - p)
 
 
+
+def g_opt_inf(x):
+    return 3.0 * x**4 - 8.0 * x**3 + 6.0 * x**2
+
 # Definition 2.1 (Expected Reward). For scoring rule $f:(0,1) \rightarrow \mathbb{R}$, denote by $r_{p}^{f}(x):=$ $p \cdot f(x)+(1-p) \cdot f(1-x)$ the expected reward of an expert who predicts $x$ when their true belief is $p$.
 # Let also $R^{f}(p):=r_{p}^{f}(p)$ be the expected reward of an expert who reports their true belief $p$. We may drop the superscript when the scoring rule $f$ is clear from context.
+
 
 
 def compute_delta_reward(scoring_rule: Callable, k: int, n: int) -> float:
@@ -62,13 +113,27 @@ def compute_delta_reward(scoring_rule: Callable, k: int, n: int) -> float:
     return term1 + term2 + term3
 
 
+
+
+
+
+# Generate random configurations
+scoring_rules = {
+    "logarithmic": logarithmic_scoring_rule,
+    "spherical": spherical_scoring_rule,
+    "quadratic": quadratic_scoring_rule,
+    "optimal": g_opt_inf,
+    # "g_opt_1": g_opt_1_poly,
+    # "g_opt_2": g_opt_2_poly,
+}
 def simulate_expert_flips_geometric_cost(
+    *,
     true_bias: float,
-    scoring_rule: Callable[[float], float],
+    scoring_rule_name: str, 
     base_cost: float,
     alpha: float = 1.0,
     ell: float = 2.0,
-    min_c: float = 1e-6,
+    min_c: float = 1e-10,
     start_decay_flips=3,
 ) -> Tuple[float, float, list, list]:
     """
@@ -92,7 +157,8 @@ def simulate_expert_flips_geometric_cost(
 
     heads = 0
     flips = 0
-
+    cost = 0
+    scoring_rule = scoring_rules[scoring_rule_name]
     while True:
         # Calculate marginal gain from additional flip
         delta_reward = compute_delta_reward(scoring_rule, heads, flips)
@@ -112,54 +178,9 @@ def simulate_expert_flips_geometric_cost(
         if np.random.random() < true_bias:
             heads += 1
         flips += 1
-
+        cost += next_flip_cost
     # Calculate final prediction and error
     final_pred = (heads + 1) / (flips + 2)
     error = abs(final_pred - true_bias) ** ell
 
-    return error, flips
-
-
-def create_logarithmic_scoring_rule():
-    x = sp.Symbol("x")
-    unnormalized_expr = sp.log(1 + x)
-    # Compute the integral symbolically
-    integral_value = float(sp.integrate(unnormalized_expr, (x, 0, 1)))
-
-    def logarithmic_scoring_rule(p):
-        return np.log1p(p) / integral_value
-
-    return logarithmic_scoring_rule
-
-
-def create_spherical_scoring_rule():
-    x = sp.Symbol("x")
-    unnormalized_expr = x / sp.sqrt(x**2 + (1 - x) ** 2)
-    # Compute the integral symbolically
-    integral_value = float(sp.integrate(unnormalized_expr, (x, 0, 1)))
-
-    def spherical_scoring_rule(p):
-        return p / np.sqrt(p**2 + (1 - p) ** 2) / integral_value
-
-    return spherical_scoring_rule
-
-
-# Define scoring rules from the paper
-
-
-def create_quadratic_scoring_rule():
-    # Define the symbolic integral for normalization
-    x = sp.Symbol("x")
-    unnormalized_expr = 2 * x - x**2
-    # Compute the integral symbolically
-    integral_value = float(sp.integrate(unnormalized_expr, (x, 0, 1)))
-
-    def quadratic_scoring_rule(p):
-        return (2 * p - p**2) / integral_value
-
-    return quadratic_scoring_rule
-
-
-logarithmic_scoring_rule = create_logarithmic_scoring_rule()
-spherical_scoring_rule = create_spherical_scoring_rule()
-quadratic_scoring_rule = create_quadratic_scoring_rule()
+    return error, flips, cost
